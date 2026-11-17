@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 typedef int32_t (ABI *Module)(uint16_t);
 typedef int32_t (ABI *Init)(const void *,void *);
 typedef int32_t (ABI *Param)(uint32_t,int32_t *);
@@ -16,10 +17,26 @@ int main(int argc,char **argv) {
     Param param=GET(Param,"99b82IKXpH4");
     List list=GET(List,"xnd8BJzAxmk");
     assert(load && loaded && unload && init && param && list);
-    assert(!runtime_content_resolve("g8cM39EUZ6o"));
+    assert(!runtime_content_resolve("unknown-import"));
     if (argc>1 && !strcmp(argv[1],"--missing")) { load(0xb4); return 99; }
     const uint32_t profile[]={1,13,0x80000000,0,7};
     runtime_content_configure(profile);
+    if (argc==3 && !strcmp(argv[1],"--addons")) {
+        runtime_content_title("CUSA08034");
+        unsigned char initial[32]={0}, boot[40];
+        assert(load(0xb4)==0 && init(initial,boot)==0);
+        const unsigned expected=(unsigned)strtoul(argv[2],NULL,10);
+        uint32_t hits=0;
+        assert(list(0,NULL,0,&hits)==0 && hits==expected);
+        struct { char label[17]; char padding[3]; uint32_t status; } entries[2];
+        memset(entries,0xaa,sizeof entries);
+        assert(list(0,entries,1,&hits)==0 && hits==(expected ? 1u : 0u));
+        if (expected) assert(entries[0].status==4 && entries[0].label[16]==0);
+        for (unsigned i=0;i<sizeof entries[1];++i)
+            assert(((unsigned char *)&entries[1])[i]==0xaa);
+        puts("PASS: region-filtered, deduplicated DLC entitlements and list bounds");
+        return 0;
+    }
     if (argc>1 && !strcmp(argv[1],"--unknown")) {
         /* Other system modules are host-provided: reference counted, independent. */
         assert((uint32_t)loaded(0xb5)==0x805a1001);

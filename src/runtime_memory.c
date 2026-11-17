@@ -222,6 +222,8 @@ void runtime_memory_lock_stats2(double *worst_hold_ms, uint64_t *read_waits, dou
 void runtime_memory_carve_stats(uint64_t *mib, uint64_t *runs, double *split_ms, double *worst_ms, double *other_ms) {
     *mib=*runs=0; *split_ms=*worst_ms=*other_ms=0;
 }
+/* sotc: no view-carve suspend/resume on POSIX, so no splits to count. */
+uint64_t runtime_memory_carve_splits(void) { return 0; }
 void runtime_memory_lock_sites(char *readers, char *writers, size_t capacity) {
     if (capacity) readers[0]=writers[0]=0;
 }

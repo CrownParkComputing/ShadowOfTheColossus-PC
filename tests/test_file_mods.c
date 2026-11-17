@@ -20,6 +20,20 @@ int main(void) {
     FILE *f=fopen(source,"w"); assert(f); assert(fputs("modded",f)>=0); assert(!fclose(f));
     assert(!symlink(source,link));
     runtime_file_configure(game,user);
+    char mixed_dir[1024],mixed_file[1100];
+    snprintf(mixed_dir,sizeof(mixed_dir),"%s/MixedCase",game);
+    snprintf(mixed_file,sizeof(mixed_file),"%s/pakN.psarc",mixed_dir);
+    assert(!mkdir(mixed_dir,0755));
+    f=fopen(mixed_file,"w"); assert(f); assert(fputs("archive",f)>=0); assert(!fclose(f));
+    int archive=(int)do_open("/app0/mixedcase/pakn.psarc",0,0);
+    assert(archive>=3);
+    char archive_data[8]={0};
+    assert(do_read(archive,archive_data,7)==7 && !strcmp(archive_data,"archive"));
+    assert(!do_close(archive));
+    GuestStat archive_stat;
+    assert(!do_stat("/hostapp/MIXEDCASE/PAKN.PSARC",&archive_stat) && archive_stat.size==7);
+    assert(do_open("/app0/mixedcase/../pakn.psarc",0,0)==-EACCES);
+    assert(!unlink(mixed_file) && !rmdir(mixed_dir));
     for (int i=0;i<3;++i) {
         const char *path=i==0 ? "/app0/asset.dcx" : i==1 ? "/hostapp/asset.dcx" : "asset.dcx";
         int fd=(int)do_open(path,0,0); assert(fd>=3);

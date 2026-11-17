@@ -4,6 +4,8 @@
 // (driver allocations, stacks) by allocation size. Diagnostic only; Windows only.
 #pragma once
 
+#include <cstddef> // sotc: size_t
+#include <cstdint> // sotc: uint64_t
 #include <string>
 
 namespace BbMemReport {

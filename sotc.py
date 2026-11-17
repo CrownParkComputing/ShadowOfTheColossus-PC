@@ -4,6 +4,7 @@
 and starts it.
 
     python sotc.py                      (or double-click SotC.bat)
+    python sotc.py --install-pkg game.pkg --out ../CUSA08034
 
 Settings (environment variables, or sotc.ini beside this script as NAME=value lines):
     SOTC_GAME_DIR     the dumped game folder (the one with eboot.bin); default ../CUSA08809,
@@ -17,6 +18,10 @@ Settings (environment variables, or sotc.ini beside this script as NAME=value li
     SOTC_DLC_DIR      optional: the game's DLC (one folder per add-on with sce_sys/param.sfo,
                       or shadPS4's addcont folder holding CUSA08809 / CUSA08034); only DLC of the
                       game's own region is listed
+    SOTC_PREFETCH     1: Linux reads game archives into the OS file cache before starting;
+                      skipped if RAM is insufficient. 0 disables archive read-ahead.
+    SOTC_ASYNC_PRELOAD 0: finish building cached graphics pipelines at the loading screen;
+                      unseen shaders still need first-use compilation
     SOTC_MODES        optional, comma-separated: af16 (16x anisotropic filtering),
                       fps60 (removes the 30 FPS cap; experimental, vblank at 120 Hz),
                       fps60game (the game's own 60 FPS target, as the PS4 Pro Performance mode;
@@ -62,15 +67,18 @@ def load_ini():
 
 def no_console():
     """Started without a console (the launcher): console programs must not open their own."""
+    if os.name != 'nt':
+        return 0
     import ctypes
     return 0 if ctypes.windll.kernel32.GetConsoleWindow() else subprocess.CREATE_NO_WINDOW
 
 
 def find_probe():
-    for candidate in (PORT / 'bin' / 'bb-probe.exe', PORT / 'out' / 'bb-probe.exe'):
+    name = 'bb-probe.exe' if os.name == 'nt' else 'bb-probe'
+    for candidate in (PORT / 'bin' / name, PORT / 'out' / name):
         if candidate.is_file():
             return candidate
-    fail('bb-probe.exe not found: build it with build.sh (MSYS2 CLANG64) or use a packaged build.')
+    fail(f'{name} not found: build it with build.sh or use a packaged build.')
 
 
 def run_script(name, *args):
@@ -126,8 +134,68 @@ def merged_source(game, update, out):
     return merged
 
 
+def precache_budget():
+    """Leave room for the guest and GPU allocations; cached archive pages remain reclaimable."""
+    try:
+        memory = {}
+        for line in Path('/proc/meminfo').read_text().splitlines():
+            name, value, *_ = line.split()
+            if name in ('MemTotal:', 'MemAvailable:'):
+                memory[name] = int(value) * 1024
+        reserve = max(6 * 1024**3, memory['MemTotal:'] // 4)
+        return max(0, min(memory['MemTotal:'] // 2, memory['MemAvailable:'] - reserve))
+    except (OSError, ValueError, KeyError):
+        return 0
+
+
+def precache_game_data(game, update=None):
+    """Warm the effective archives, not a second in-memory copy or a permanently pinned cache."""
+    if sys.platform != 'linux' or os.environ.get('SOTC_PREFETCH') != '1':
+        return
+    archives = {}
+    try:
+        for folder in (game, update):
+            if folder:
+                for path in folder.iterdir():
+                    if path.suffix.lower() == '.psarc' and path.is_file():
+                        archives[path.name.casefold()] = (path, path.stat().st_size)
+    except OSError as error:
+        print(f'SOTC precache: cannot scan archives: {error}', flush=True)
+        return
+    total = sum(size for _, size in archives.values())
+    if not total:
+        return
+    budget = precache_budget()
+    if total > budget:
+        print(f'SOTC precache: skipped ({total / 1024**3:.1f} GiB of archives, '
+              f'{budget / 1024**3:.1f} GiB safe cache budget)', flush=True)
+        return
+    print(f'SOTC precache: warming {len(archives)} archives ({total / 1024**3:.1f} GiB) '
+          'before play', flush=True)
+    start = last_report = time.monotonic()
+    done = 0
+    buffer = bytearray(4 * 1024**2)
+    for path, _ in sorted(archives.values(), key=lambda item: item[1]):
+        try:
+            with path.open('rb', buffering=0) as archive:
+                while count := archive.readinto(buffer):
+                    done += count
+                    now = time.monotonic()
+                    if now - last_report >= 1:
+                        print(f'SOTC precache: {done / 1024**3:.1f}/{total / 1024**3:.1f} GiB '
+                              f'({100 * done / total:.0f}%)', flush=True)
+                        last_report = now
+        except OSError as error:
+            print(f'SOTC precache: {path.name}: {error}; continuing normally', flush=True)
+    print(f'SOTC precache: read {done / 1024**3:.1f} GiB in {time.monotonic() - start:.1f}s; '
+          'OS cache is reclaimable, not pinned', flush=True)
+
+
 def main():
     load_ini()
+    if sys.argv[1:2] == ['--install-pkg']:
+        run_script('pkg_extract.py', *sys.argv[2:])
+        return 0
     env = os.environ
     os.chdir(PORT)
     out = PORT / 'out'
@@ -221,6 +289,7 @@ def main():
         env.setdefault('BB_HDR', '1')
 
     probe = find_probe()
+    precache_game_data(game, update)
     # Development builds run from the MSYS2 tree: its CLANG64 DLLs (SDL3, FFmpeg, ...).
     if not (probe.parent / 'SDL3.dll').is_file():
         clang64 = Path(env.get('MSYS2_ROOT', r'C:\msys64')) / 'clang64' / 'bin'
@@ -234,7 +303,7 @@ def main():
     command = [str(probe), str(out / 'boot-linked.bin'), '--content-profile', str(out / 'content.bin'),
                '--sotc-cpu', str(out / 'sotc-cpu.bin'), '--patches', str(out / 'patches.bin'),
                *(['--sotc-cmdline', str(out / 'cmdline.bin')] if (out / 'cmdline.bin').is_file() else []),
-               '--app0', str(game), '--user', str(user), *sys.argv[1:]]
+               '--app0', str(game), '--user', str(user), '--timeout', '0', *sys.argv[1:]]
     # SOTC_WRAP: a JSON list put in front of the game, e.g. RenderDoc
     # ["C:/Program Files/RenderDoc/renderdoccmd.exe", "capture", "-w", "-c", "<file>"]; F12 then
     # captures the frame (SOTC_RDOC_SUBMITS submissions).

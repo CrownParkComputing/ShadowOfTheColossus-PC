@@ -6,6 +6,12 @@
 #include <string.h>
 #ifdef _WIN32
 #include <windows.h>
+#else
+/* sotc: the add-on scan on POSIX (the Linux build): opendir/readdir + stat in the place of
+ * FindFirstFile/GetFileAttributes. */
+#include <dirent.h>
+#include <strings.h>
+#include <sys/stat.h>
 #endif
 #define INVALID_ID ((int32_t)0x805a1000)
 #define NOT_LOADED ((int32_t)0x805a1001)
@@ -111,12 +117,78 @@ static int addon_known(const char *content) {
     for (unsigned i=0;i<addon_count;++i) if (!strncmp(addons[i].label,content+20,16)) return 1;
     return 0;
 }
+#ifndef _WIN32
+/* sotc: one add-on found by the scan: the content ID
+ * ("...-CUSAXXXXX_XX-<label>") becomes an installed entitlement of the running title. */
+static void addon_found(const char *name,const char *content) {
+    if (!strstr(content,title_id) || strlen(content)<=20 || addon_count==MAX_ADDONS ||
+        addon_known(content)) return;
+    AddonInfo *info=&addons[addon_count++];
+    memset(info,0,sizeof *info);
+    snprintf(info->label,sizeof info->label,"%s",content+20);
+    info->status=4;
+    printf("Runtime: DLC %s: entitlement %s\n",name,info->label);
+}
 static void scan_addons(void) {
     if (addons_scanned) return;
     addons_scanned=1;
-#ifndef _WIN32
-    return;
+    const char *root=getenv("SOTC_DLC_DIR");
+    if (!root || !*root) return;
+    static char base[1024];
+    snprintf(base,sizeof base,"%s/%s",root,title_id);
+    struct stat st;
+    if (stat(base,&st) || !S_ISDIR(st.st_mode)) snprintf(base,sizeof base,"%s",root);
+    DIR *dir=opendir(base);
+    if (!dir) { printf("Runtime: DLC folder %s not found\n",base); return; }
+    for (struct dirent *e; (e=readdir(dir)) && addon_count<MAX_ADDONS;) {
+        if (e->d_name[0]=='.') continue;
+        static char path[1400];
+        snprintf(path,sizeof path,"%s/%s",base,e->d_name);
+        /* A folder's name is not enough to know what it is: stat it. */
+        if (stat(path,&st)) continue;
+        const size_t name_len=strlen(e->d_name);
+        if (!S_ISDIR(st.st_mode)) {
+            /* An add-on package not installed: its header says it is additional content (type
+             * 0x1b) and carries the content ID. Entitlement-only DLC needs nothing else. */
+            if (name_len<=4 || strcasecmp(e->d_name+name_len-4,".pkg")) continue;
+            FILE *pkg=fopen(path,"rb");
+            static unsigned char header[0x80];
+            const size_t got=pkg ? fread(header,1,sizeof header,pkg) : 0;
+            if (pkg) fclose(pkg);
+            if (got<sizeof header || memcmp(header,"\x7f" "CNT",4)) continue;
+            static char content[37];
+            memcpy(content,header+0x40,36); content[36]=0;
+            const uint32_t type=(uint32_t)header[0x74]<<24|header[0x75]<<16|header[0x76]<<8|header[0x77];
+            if (type!=0x1b) continue;
+            addon_found(e->d_name,content);
+            continue;
+        }
+        if (strlen(path)+19>=sizeof path) continue;
+        memcpy(path+strlen(path),"/sce_sys/param.sfo",19);
+        FILE *f=fopen(path,"rb");
+        if (!f) continue;
+        static unsigned char data[65536]; /* not on the guest thread's small stack */
+        const size_t size=fread(data,1,sizeof data,f);
+        fclose(f);
+        const char *category=sfo_string(data,size,"CATEGORY");
+        const char *content=sfo_string(data,size,"CONTENT_ID");
+        if (!category || strncmp(category,"ac",2) || !content) {
+            printf("Runtime: DLC %s skipped (not add-on content)\n",e->d_name);
+            continue;
+        }
+        if (!strstr(content,title_id)) {
+            printf("Runtime: DLC %s skipped (%s is not of %s)\n",e->d_name,content,title_id);
+            continue;
+        }
+        if (addon_known(content)) continue;
+        addon_found(e->d_name,content);
+    }
+    closedir(dir);
+}
 #else
+static void scan_addons(void) {
+    if (addons_scanned) return;
+    addons_scanned=1;
     const char *root=getenv("SOTC_DLC_DIR");
     if (!root || !*root) return;
     static char base[1024], pattern[1100];
@@ -178,8 +250,8 @@ static void scan_addons(void) {
         printf("Runtime: DLC %s: entitlement %s\n",entry.cFileName,info->label);
     } while (FindNextFileA(find,&entry));
     FindClose(find);
-#endif
 }
+#endif
 static ABI int32_t addon_list(uint32_t service,void *list,uint32_t capacity,uint32_t *hits) {
     require_initialized();
     if (service) { fputs("STOP: nonzero AppContent service label unsupported\n",stderr); exit(21); }

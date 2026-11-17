@@ -121,6 +121,18 @@ static void *allocate_image(size_t size) {
     printf("Image at %p (below 2 GiB, as the game's 31-bit pointers need); loader at %p\n",p,(void *)GetModuleHandleA(NULL));
     return p;
 }
+#else
+static void *allocate_image(size_t size) {
+    /* sotc: runtime_low_map only guarantees 40-bit pointers, not the 31-bit static pointers. */
+    void *p=mmap(NULL,size,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_32BIT,-1,0);
+    if (p==MAP_FAILED) fail("no free range below 2 GiB for the eboot");
+    if ((uintptr_t)p+size>UINT64_C(0x80000000)) {
+        munmap(p,size);
+        fail("the eboot range exceeds the game's 31-bit pointers");
+    }
+    printf("Image at %p (below 2 GiB, as the game's 31-bit pointers need)\n",p);
+    return p;
+}
 #endif
 #ifdef _WIN32
 /* sotc: SOTC_HEAP_WATCH=1 (#146): every 5 s, the engine's heaps (the table at image+0x2dfaab0,
@@ -226,6 +238,15 @@ __asm__(".text\n.globl enter_on_stack\nenter_on_stack:\n"
         " push %rbp\n mov %rsp,%rbp\n and $-16,%rcx\n mov %rcx,%rsp\n"
         " mov %rdi,%rax\n mov %rsi,%rdi\n mov %rdx,%rsi\n call *%rax\n"
         " mov %rbp,%rsp\n pop %rbp\n ret\n");
+/* sotc: the declarations the Windows side has at 1001 (runtime_memory.c): the POSIX fault
+ * handler's T38 alias handling and the pool-release site below need them too. */
+uintptr_t runtime_memory_alias_of(uintptr_t address);
+int runtime_memory_alias_release(uintptr_t address);
+void runtime_memory_set_release_site(uintptr_t site);
+/* sotc: the engine heap guard is the Windows heap hook's; with none installed no heap is ever
+ * chosen, and the GPU side's heap-page guard stays off as the contract (0 = none) says. */
+uintptr_t runtime_sotc_heap(void) { return 0; }
+uintptr_t runtime_sotc_heap_table(void) { return 0; }
 #endif
 static ABI void guest_exit(void) { puts("Runtime: process finalizer callback reached"); }
 /* sotc: with the user's own libSceNgs2/libSceUlt linked (link_modules.py --sys-modules) their
@@ -1717,7 +1738,16 @@ static void apply_sotc_cmdline(const char *path, uint64_t size) {
     printf("Engine command line: %s\n",text);
 }
 #ifndef _WIN32
+/* sotc: upload copies must recover before GPU fault dispatch, just like the Windows guard. */
+__thread uintptr_t bb_copy_guard_lo, bb_copy_guard_hi;
+__thread unsigned long long *bb_copy_guard_buf;
 static void fault(int sig, siginfo_t *info, void *context) {
+    if ((sig==SIGSEGV || sig==SIGBUS) && bb_copy_guard_buf &&
+        (uintptr_t)info->si_addr>=bb_copy_guard_lo && (uintptr_t)info->si_addr<bb_copy_guard_hi) {
+        sigjmp_buf *recover=(sigjmp_buf *)bb_copy_guard_buf;
+        bb_copy_guard_buf=NULL;
+        siglongjmp(*recover,1);
+    }
     /* GPU page tracking (write-protected guest pages) is resolved first. */
     if (gpu_enabled && sig == SIGSEGV) { /* T38: see the Windows handler */
         const uintptr_t at=(uintptr_t)info->si_addr, other=runtime_memory_alias_of(at);
@@ -2110,11 +2140,7 @@ int main(int argc, char **argv) {
         }
     }
     /* sotc: the CPU patch trampolines follow the image (rel32 jumps reach them). */
-#ifdef _WIN32
     image = allocate_image(round_page(size) + SOTC_TRAMPOLINE_SIZE);
-#else
-    image = allocate(round_page(size) + SOTC_TRAMPOLINE_SIZE);
-#endif
     if (fread(image, 1, size, f) != size || fgetc(f) != EOF) fail("incorrect memory image size");
     fclose(f);
     if (!cpu_only) {
@@ -2201,7 +2227,9 @@ int main(int argc, char **argv) {
     if (sotc_cpu) apply_sotc_cpu_patches(sotc_cpu, segments, ns, size);
     else if (cpu_needs_bmi_emulation) fail("this CPU needs the CPU patches (--sotc-cpu, run scripts/sotc_cpu.py)");
     if (sotc_cmdline) apply_sotc_cmdline(sotc_cmdline, size);
+#ifdef _WIN32
     if (sotc_cpu) { install_heap_hook(); install_pool_hook(); install_release_hook(); }
+#endif
     /* T38: the page pool release's VirtualQuery call (runtime_memory.c, SOTC_POOL_OWNER) */
     if (sotc_cpu && image[0x1ac7d]==0xE8) runtime_memory_set_release_site((uintptr_t)(image+0x1ac82));
     { void bb_set_guest_image(uintptr_t base); bb_set_guest_image((uintptr_t)image); }

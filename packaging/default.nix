@@ -12,10 +12,11 @@ let
   # FSR 4.1.1 models are extracted from AMD's DLLs: never in a public package. BB_PACKAGE_FSR411=1
   # (appimage.sh runs nix with --impure) bundles the local fsr4_411 for one's own devices.
   fsr411 = builtins.getEnv "BB_PACKAGE_FSR411" == "1";
-  assetDirs = [ "scripts" "fsr4_shaders" "launcher" ] ++ lib.optional fsr411 "fsr4_411";
+  assetDirs = [ "scripts" "fsr4_shaders" "launcher" "third_party/licenses" ] ++ lib.optional fsr411 "fsr4_411";
   # Only what the package needs (the tree also holds builds, profiles and captures).
   wanted = [
-    "run.sh" "out" "out/bb-probe" "out/bb-gpu-capabilities" "out/gpu" "out/gpu/libbbgpu.so"
+    "run.sh" "sotc.py" "out" "out/bb-probe" "out/bb-gpu-capabilities" "out/sotc-pkgdec"
+    "out/gpu" "out/gpu/libbbgpu.so" "LICENSE" "third_party"
   ] ++ assetDirs;
   src = builtins.path {
     name = "bbport-src";
@@ -77,7 +78,9 @@ pkgs.stdenv.mkDerivation {
     runHook preInstall
     d=$out/share/bbport
     mkdir -p $d/bin $out/bin
-    cp run.sh $d/
+    cp LICENSE $d/
+    cp -r third_party/licenses $d/
+    cp run.sh sotc.py $d/
     cp -r scripts fsr4_shaders launcher $d/
     # FSR 4.1.1 models only with BB_PACKAGE_FSR411=1 (see above); otherwise run.sh finds them in
     # the data directory (~/.local/share/bbport/fsr4_411).
@@ -86,6 +89,7 @@ pkgs.stdenv.mkDerivation {
     fi
     install -m755 out/bb-probe $d/bin/bb-probe
     install -m755 out/bb-gpu-capabilities $d/bin/bb-gpu-capabilities
+    install -m755 out/sotc-pkgdec $d/bin/sotc-pkgdec
     install -Dm755 out/gpu/libbbgpu.so $d/bin/gpu/libbbgpu.so
     runHook postInstall
   '';

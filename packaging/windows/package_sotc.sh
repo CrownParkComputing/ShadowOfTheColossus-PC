@@ -10,12 +10,12 @@ set -euo pipefail
 cd -- "$(dirname -- "$0")/../.."
 export MSYS2_ROOT=${MSYS2_ROOT:-/i/msys64}
 export PATH="$MSYS2_ROOT/clang64/bin:$MSYS2_ROOT/usr/bin:$PATH"
-[[ -f out/bb-probe.exe && -f out/bb-gpu-capabilities.exe ]] || { echo 'Build first: bash build.sh' >&2; exit 1; }
+[[ -f out/bb-probe.exe && -f out/bb-gpu-capabilities.exe && -f out/sotc-pkgdec.exe ]] || { echo 'Build first: bash build.sh' >&2; exit 1; }
 python=${WINPYTHON:-/c/PyBuild312/python.exe}
 "$python" -m PyInstaller --version >/dev/null || { echo "Need PyInstaller in $python (WINPYTHON)" >&2; exit 1; }
 # The scripts run inside SotC.exe (--script): the standard modules they import come along.
 hidden=()
-for module in argparse base64 collections hashlib json re shutil struct; do
+for module in argparse base64 collections functools hashlib hmac json mmap re shutil struct tempfile zlib; do
     hidden+=(--hidden-import "$module")
 done
 "$python" -m PyInstaller --noconfirm --clean --log-level WARN --windowed --name SotC \
@@ -25,7 +25,8 @@ done
 
 dest=out/stage/SotC-PC
 rm -rf -- out/stage
-mkdir -p "$dest/bin" "$dest/scripts" "$dest/launcher"
+mkdir -p "$dest/bin" "$dest/scripts" "$dest/launcher" "$dest/licenses"
+cp third_party/licenses/orbis-MIT.txt "$dest/licenses/"
 cp -r out/pyi-dist/SotC/. "$dest/"
 cp launcher/sotc.ico launcher/sotc.png launcher/window_icon.png "$dest/launcher/"
 # The launcher theme's fonts (Cinzel, Inter: SIL Open Font License, licences next to them).
@@ -39,11 +40,11 @@ fi
 # Xbox-style button icons drawn for the port (tools/make_button_icons.py).
 cp -r glyphs "$dest/"
 # Without debug information (out/ keeps the symbols for crash reports).
-for exe in bb-probe.exe bb-gpu-capabilities.exe; do
+for exe in bb-probe.exe bb-gpu-capabilities.exe sotc-pkgdec.exe; do
     llvm-strip --strip-debug -o "$dest/bin/$exe" "out/$exe"
 done
 # Every DLL the loader takes from the CLANG64 tree (SDL3, FFmpeg, Vulkan loader, ...).
-ldd "$dest/bin/bb-probe.exe" "$dest/bin/bb-gpu-capabilities.exe" | awk '/\/clang64\/bin\// {print $3}' | sort -u | while read -r dll; do
+ldd "$dest/bin/bb-probe.exe" "$dest/bin/bb-gpu-capabilities.exe" "$dest/bin/sotc-pkgdec.exe" | awk '/\/clang64\/bin\// {print $3}' | sort -u | while read -r dll; do
     cp -u "$dll" "$dest/bin/"
 done
 # DLSS Frame Generation (RTX 40/50): the official NVIDIA Streamline runtime next to bb-probe.exe,
@@ -75,7 +76,7 @@ else
     echo "AMD FSR: no FSR SDK in $amd_fsr (FSR 1 instead of FSR 4)" >&2
 fi
 cp scripts/prepare.py scripts/link_libc.py scripts/link_modules.py scripts/content_profile.py \
-   scripts/sotc_cpu.py scripts/sotc_modes.py "$dest/scripts/"
+   scripts/sotc_cpu.py scripts/sotc_modes.py scripts/pkg_extract.py "$dest/scripts/"
 cp sotc.py SotC.bat LICENSE CHANGELOG.md "$dest/"
 cp recomplauncher.json "$dest/"
 cp docs/sotc/README-SotC.md "$dest/README.md"

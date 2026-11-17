@@ -103,6 +103,15 @@ class LoaderTests(unittest.TestCase):
         self.assertEqual(r.returncode, 20, r.stderr)
         self.assertIn('after-relative-jump', r.stdout)
 
+    def test_static_pointer_survives_31_bit_storage(self):
+        # LEA into eax packs the image pointer like SotC; reading it must still reach the data.
+        code = (b'\x8d\x05\x12\0\0\0\x8b\x38\xff\x25\x12\0\0\0'.ljust(24,b'\0')
+                + struct.pack('<I',42))
+        result = self.run_image(package(code,[(32,1,0,0)],['after-packed-pointer']))
+        self.assertEqual(result.returncode,20,result.stdout+result.stderr)
+        self.assertIn('after-packed-pointer',result.stdout)
+        self.assertIn('first argument: 0x2a',result.stdout)
+
     def test_out_of_bounds_relocation_is_rejected(self):
         r = self.run_image(package(b'\xc3', [(4092, 0, 0, 0)]))
         self.assertEqual(r.returncode, 1)

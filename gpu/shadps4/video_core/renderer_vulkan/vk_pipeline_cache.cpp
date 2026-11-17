@@ -477,7 +477,11 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     std::vector<u8> driver_cache_data;
     if (DriverCacheEnabled()) {
         const auto path = DriverCachePath();
+#ifdef _WIN32
         if (std::FILE* f = _wfopen(path.c_str(), L"rb")) {
+#else
+        if (std::FILE* f = std::fopen(path.c_str(), "rb")) { // sotc: POSIX paths are char
+#endif
             std::fseek(f, 0, SEEK_END);
             const long size = std::ftell(f);
             std::fseek(f, 0, SEEK_SET);
@@ -571,8 +575,12 @@ void PipelineCache::SaveDriverCache() {
     // Written next to it and renamed: a crash while writing keeps the old copy.
     const auto path = DriverCachePath();
     auto tmp = path;
-    tmp += L".tmp";
+    tmp += ".tmp"; // sotc: POSIX paths are char
+#ifdef _WIN32
     std::FILE* f = _wfopen(tmp.c_str(), L"wb");
+#else
+    std::FILE* f = std::fopen(tmp.c_str(), "wb"); // sotc: POSIX paths are char
+#endif
     if (!f) {
         return;
     }

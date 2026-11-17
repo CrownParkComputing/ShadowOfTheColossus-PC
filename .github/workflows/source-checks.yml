@@ -1,0 +1,38 @@
+name: Source Checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build standalone tools and runtime tests
+        run: |
+          mkdir -p out
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -Itools \
+            tools/pkgdec.cpp tools/pkgdec_main.cpp -o out/sotc-pkgdec
+          gcc -std=c11 -D_GNU_SOURCE -O2 -Wall -Wextra -Werror -I. -Isrc \
+            tests/test_content.c src/runtime_content.c -o out/content-test
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -pthread -I. -Isrc \
+            tests/test_file_mods.c src/runtime_event.c -o out/file-mods-test
+      - name: Check extraction, runner, pre-cache, and AppContent
+        run: |
+          python -m unittest discover -s tests -p test_pkg_extract.py -v
+          python -m unittest discover -s tests -p test_sotc_runner.py -v
+          python -m unittest discover -s tests -p test_content.py -v
+          out/file-mods-test
+      - name: Check scripts and patch formatting
+        run: |
+          python -m py_compile sotc.py scripts/pkg_extract.py
+          bash -n build.sh run.sh packaging/appimage.sh packaging/windows/package_sotc.sh
+          git -c core.whitespace=cr-at-eol show --format= --check HEAD

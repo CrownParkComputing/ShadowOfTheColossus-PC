@@ -17,6 +17,9 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#ifndef _WIN32
+#include <strings.h>
+#endif
 #ifdef _WIN32
 #include <windows.h>
 /* 64-bit sizes and times; directories are never opened as CRT descriptors. */
@@ -105,7 +108,9 @@ void runtime_file_configure(const char *app0,const char *user) {
         for (int i=0;i<2 && !update_root[0];++i) {
             snprintf(path,sizeof(path),"%s%s",app0,suffixes[i]);
             HostStat st;
-            if (!host_stat(path,&st) && S_ISDIR(st.st_mode)) snprintf(update_root,sizeof(update_root),"%s",path);
+            /* sotc: path fits update_root only when app0 does (same tail); check before copying. */
+            if (!host_stat(path,&st) && S_ISDIR(st.st_mode) && strlen(path)<sizeof(update_root))
+                snprintf(update_root,sizeof(update_root),"%s",path);
         }
     }
     if (update_root[0]) printf("Runtime: game update overlaid from %s\n",update_root);
@@ -117,6 +122,41 @@ void runtime_file_configure(const char *app0,const char *user) {
         char guest[32]; snprintf(guest,sizeof(guest),"/%s",writable[i]);
         runtime_file_mount(guest,path);
     }
+}
+/* sotc: Bluepoint lowercases archive paths; keep game mounts case-insensitive on Linux too.
+ * Exact matches win, and writable save paths never pass through this fallback. */
+static void game_path_case(char *path,size_t root_length) {
+#ifndef _WIN32
+    HostStat st;
+    if (!host_stat(path,&st)) return;
+    char *part=path+root_length;
+    while (*part) {
+        if (*part=='/') { ++part; continue; }
+        char *end=strchr(part,'/');
+        if (!end) end=part+strlen(part);
+        const char tail=*end;
+        *end=0;
+        if (host_stat(path,&st)) {
+            const char first=*part;
+            *part=0;
+            DIR *dir=opendir(path);
+            *part=first;
+            if (dir) {
+                for (struct dirent *entry; (entry=readdir(dir));) {
+                    if (!strcasecmp(part,entry->d_name)) {
+                        memcpy(part,entry->d_name,(size_t)(end-part));
+                        break;
+                    }
+                }
+                closedir(dir);
+            }
+        }
+        *end=tail;
+        part=end;
+    }
+#else
+    (void)path; (void)root_length;
+#endif
 }
 /* Resolve a guest path to a host path; returns 0 or a host errno. */
 static int translate(const char *guest,char *out,size_t size) {
@@ -136,12 +176,16 @@ static int translate(const char *guest,char *out,size_t size) {
     if (!m) result=ENOENT;
     else if ((size_t)snprintf(out,size,"%s%s",m->host,buffer+best)>=size) result=ENAMETOOLONG;
     const int game_path=m && (!strcmp(m->guest,"/app0") || !strcmp(m->guest,"/hostapp"));
+    const size_t root_length=m ? strlen(m->host) : 0;
     pthread_mutex_unlock(&lock);
+    if (!result && game_path) game_path_case(out,root_length);
     if (!result && game_path && update_root[0] && buffer[best]) {
         char updated[1100];
         HostStat st;
-        if ((size_t)snprintf(updated,sizeof(updated),"%s%s",update_root,buffer+best)<sizeof(updated) &&
-            !host_stat(updated,&st) && (size_t)snprintf(out,size,"%s",updated)>=size) result=ENAMETOOLONG;
+        if ((size_t)snprintf(updated,sizeof(updated),"%s%s",update_root,buffer+best)<sizeof(updated)) {
+            game_path_case(updated,strlen(update_root));
+            if (!host_stat(updated,&st) && (size_t)snprintf(out,size,"%s",updated)>=size) result=ENAMETOOLONG;
+        }
     }
     if (result==ENOENT) fprintf(stderr,"Runtime: no mount for guest path %s\n",guest);
     return result;
@@ -635,4 +679,3 @@ void runtime_file_report(void) {
     printf("Runtime: files opened=%zu, reads=%zu (%llu bytes), writes=%zu, not found=%zu\n",
            opens,reads,(unsigned long long)bytes_read,writes,missing);
 }
-

@@ -1,0 +1,7 @@
+# Copy to sotc.ini; set paths to your own game dump and optional add-ons.
+# SOTC_GAME_DIR=/path/to/CUSA08034
+# SOTC_DLC_DIR=/path/to/addons
+SOTC_MOUSE=0
+SOTC_PREFETCH=1
+SOTC_ASYNC_PRELOAD=0
+SOTC_DRIVER_CACHE=1

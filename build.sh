@@ -39,6 +39,8 @@ MINGW*|MSYS*)
         echo 'Build failed (full log: out/gpu-build.log)' >&2; exit 1
     fi
     cp out/gpu/bb-probe.exe out/gpu/bb-gpu-capabilities.exe out/
+    "${CXX:-clang++}" -std=c++17 -O2 -Wall -Wextra -Werror -Itools \
+        tools/pkgdec.cpp tools/pkgdec_main.cpp -o out/sotc-pkgdec.exe
     echo "Built $PWD/out/bb-probe.exe"
     exit 0
     ;;
@@ -98,16 +100,28 @@ if [[ ! -f out/libatrac9.a || -n $(find third_party/LibAtrac9/C/src -newer out/l
     for source in "${atrac9[@]}"; do "$CC" -std=c99 -O2 -g -w -c "$source" -o "out/atrac9/$(basename "${source%.c}").o"; done
     ar rcs out/libatrac9.a out/atrac9/*.o
 fi
-"$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -no-pie "${includes[@]}" -I. -Isrc src/probe.c "${runtime[@]}" src/vulkan_smoke.c out/libatrac9.a -lm "${gpu[@]}" "${libraries[@]}" -o out/bb-probe
+# sotc: -D_GNU_SOURCE for the sources without it (runtime_sotc.c's tm_gmtoff/usleep); the empty
+# value is the same define the other sources already have, so there is no redefinition warning.
+"$CC" -std=c11 -D_GNU_SOURCE= -O2 -g -Wall -Wextra -Werror -pthread -no-pie "${includes[@]}" -I. -Isrc src/probe.c "${runtime[@]}" src/vulkan_smoke.c out/libatrac9.a -lm "${gpu[@]}" "${libraries[@]}" -o out/bb-probe
 echo "Built $PWD/out/bb-probe"
 # GPU check for run.sh (live_resolution=auto): links only the Vulkan loader.
 "$CC" -std=c11 -O2 -Wall -Wextra -Werror tools/gpu_capabilities.c "${libraries[@]}" -o out/bb-gpu-capabilities
+# sotc: the XTS helper scripts/pkg_extract.py decrypts a .pkg's game data with
+# (out/sotc-pkgdec --pkg-decrypt ...), so installing from a .pkg needs no other tool.
+CXX=${CXX:-$(command -v c++ || command -v g++ || command -v clang++ || true)}
+if [[ -n $CXX ]]; then
+    "$CXX" -std=c++17 -O2 -g -Wall -Wextra -Werror -Itools tools/pkgdec.cpp tools/pkgdec_main.cpp \
+        -o out/sotc-pkgdec
+    echo "Built $PWD/out/sotc-pkgdec"
+else
+    echo 'No C++ compiler for out/sotc-pkgdec: installing from a .pkg is unavailable (a dump still works).' >&2
+fi
 if [[ ${1:-} == --test ]]; then
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread "${includes[@]}" -I. -Isrc tests/test_pad.c "${libraries[@]}" -o out/pad-test
     out/pad-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -I. -Isrc tests/test_runtime.c "${runtime[@]}" out/libatrac9.a -lm "${gpu[@]}" "${libraries[@]}" -o out/runtime-test
     out/runtime-test
-    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -Isrc tests/test_file_mods.c -o out/file-mods-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -Isrc tests/test_file_mods.c src/runtime_event.c -o out/file-mods-test
     out/file-mods-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -I. -Isrc tests/test_sema.c "${runtime[@]}" out/libatrac9.a -lm "${gpu[@]}" "${libraries[@]}" -o out/sema-test
     out/sema-test

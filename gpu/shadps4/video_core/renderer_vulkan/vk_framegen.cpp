@@ -4,8 +4,14 @@
 #include "video_core/renderer_vulkan/vk_framegen.h"
 #include "video_core/sotc_ui_lang.h"
 
+#ifdef _WIN32
 #include <windows.h>
 #include <dxgi.h>
+#endif // sotc: DXGI is Windows-only
+#ifndef _WIN32
+#include <strings.h>
+#define _stricmp strcasecmp // sotc: POSIX
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -44,6 +50,10 @@ Asked AskedMode() {
 
 /// An NVIDIA GPU in the system (DXGI, before Vulkan): Streamline is for those only.
 bool HasNvidiaGpu() {
+#ifndef _WIN32
+    return false; // sotc: Streamline is Windows-only, and the question is asked for it
+#else
+
     HMODULE dxgi = LoadLibraryW(L"dxgi.dll");
     if (!dxgi) {
         return false;
@@ -64,6 +74,8 @@ bool HasNvidiaGpu() {
         factory->Release();
     }
     return found;
+}
+#endif
 }
 
 std::atomic<int> current{static_cast<int>(Mode::Off)};

@@ -6,12 +6,12 @@
 # Data (generated files, saves, bbport.ini): ~/.local/share/bbport (BB_DATA_DIR).
 set -euo pipefail
 cd -- "$(dirname -- "$0")/.."
-[[ -f out/bb-probe && -f out/gpu/libbbgpu.so ]] || { echo 'Build first: bash build.sh' >&2; exit 1; }
+[[ -f out/bb-probe && -f out/gpu/libbbgpu.so && -f out/sotc-pkgdec ]] || { echo 'Build first: bash build.sh' >&2; exit 1; }
 root=$PWD
 # The libraries' store paths (RUNPATH entries and their closures come along).
 {
     echo '['
-    for elf in out/bb-probe out/gpu/libbbgpu.so; do
+    for elf in out/bb-probe out/gpu/libbbgpu.so out/sotc-pkgdec; do
         readelf -d "$elf" | sed -n 's/.*\[\(.*\)\]/\1/p' | tr ':' '\n'
     done | grep -o '^/nix/store/[^/]*' | sort -u | grep -v -- '-nix-shell$' | sed 's/.*/  "&"/'
     echo ']'

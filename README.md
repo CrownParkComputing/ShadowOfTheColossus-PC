@@ -1,5 +1,13 @@
 # Shadow of the Colossus — PC native port · v0.76.1
 
+> **Fork CrownParkComputing:** baseado no upstream
+> [AjncSystem/ShadowOfTheColossus-PC](https://github.com/AjncSystem/ShadowOfTheColossus-PC),
+> commit `4601325`. As mudancas locais adicionam suporte Linux, instalacao de PKG local
+> e pre-cache. Os creditos, a licenca e o historico upstream sao preservados.
+> [Origem, dependencias, compilacao e limites dos testes](docs/sotc/FORK.md).
+> Os relatos de jogo completo neste README sao do upstream; nao validamos uma campanha
+> completa no Linux. Nenhum jogo, DLC, firmware, save ou cache de usuario e distribuido.
+
 <a href="https://recomplauncher.com/game/shadowofthecolossus-pc"><picture><source media="(prefers-color-scheme: dark)" srcset="https://recomplauncher.com/assets/press/launcher/badge-light.svg"><img alt="Get it on RecompLauncher" src="https://recomplauncher.com/assets/press/launcher/badge-dark.svg" height="48"></picture></a>
 
 [Releases](../../releases) · [Changelog](CHANGELOG.md)
@@ -176,6 +184,10 @@ with `user/last_run.log`.
 ---
 
 ## Building
+
+Instalacao a partir de um PKG local no Linux ou Windows:
+[guia do instalador](docs/sotc/PKG.md).
+Pre-cache de arquivos e shaders no Linux: [guia](docs/sotc/PRECACHE.md).
 
 Windows with [MSYS2](https://www.msys2.org/) (CLANG64); packages:
 [packaging/windows/README.md](packaging/windows/README.md). To freeze `SotC.exe`: a Windows

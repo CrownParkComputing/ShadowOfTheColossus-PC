@@ -1,5 +1,22 @@
 # Changelog
 
+## Fork CrownParkComputing - alteracoes locais sobre 0.76.1
+
+- Linux: imagem do jogo abaixo de 2 GiB, recuperacao de falhas das copias antes do
+  readback da GPU e caminhos de arquivos do jogo sem diferenca entre maiusculas e minusculas.
+- Correcao de compilacao Linux/LP64 e isolamento de caminhos exclusivos do Windows,
+  incluindo integracoes opcionais de frame generation.
+- Instalador de PKG local com leitura limitada de memoria e auxiliar nativo AES-XTS.
+  PKGs de varejo que precisam de chaves do console nao sao suportados.
+- Deteccao offline de DLC de acesso no Linux, filtrada por titulo, tipo e duplicatas.
+- Pre-cache opcional de arquivos antes de abrir o jogo, limitado pela RAM disponivel;
+  configuracao de exemplo desativa captura do mouse e espera pelos pipelines conhecidos.
+- Testes sinteticos de extracao, runner, memoria de ponteiros, caminhos e AppContent;
+  CI de verificacoes de fonte sem jogo ou firmware.
+- Validacao local: inicializacao do CUSA08034 ate a selecao de idioma a 30 FPS e leitura
+  antecipada de 13,4 GiB em aproximadamente 42 s. Campanha completa, pacote Windows e
+  AppImage nao foram validados neste fork. Detalhes em `docs/sotc/FORK.md`.
+
 ## 0.76.1 — 2026-11-17
 - 🌌 **Linhas tracejadas no céu em placas AMD Radeon corrigidas** (#432, #433): um shader do céu trocava valores entre pixels vizinhos de um jeito que o driver da AMD não garante nas arestas dos triângulos, e desenhava uma grade de linhas sobre o céu (tela de título e jogo). Agora usa operações de quad, que todo driver garante. NVIDIA sem mudança. O cache de shaders é refeito na primeira abertura. `SOTC_QUAD_SWIZZLE=0` volta ao antigo.
 

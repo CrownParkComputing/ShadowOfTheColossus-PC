@@ -6,6 +6,8 @@
 #include "video_core/renderer_vulkan/vk_fsr4.h"
 #include "video_core/renderer_vulkan/vk_fsrfg.h"
 
+#ifdef _WIN32 // sotc: NVIDIA Streamline is Windows-only; the stubs below keep Linux building
+
 #include <windows.h>
 
 #include <algorithm>
@@ -2381,3 +2383,44 @@ bool GetFrameInputs(u32 frame_id, FrameInputs& out) {
 }
 
 } // namespace Vulkan::Dlssg
+
+#else // !WIN32: no Streamline or DLSS on this platform; the API answers "not there", so frame
+       // generation and DLSS upscaling stay off (the FSR upscalers live outside this file).
+
+namespace Vulkan::Dlssg {
+
+PFN_vkGetInstanceProcAddr LoadInterposer() { return nullptr; }
+void OnDeviceCreated(const Instance&) {}
+bool Enabled() { return false; }
+bool CapturingInputs() { return false; }
+bool CameraLogOnly() { return false; }
+void NoteCamera(const AmdGpu::Regs&, u32) {}
+bool WantsImmediatePresent() { return false; }
+void NoteDraw(const AmdGpu::Regs&, u32, VideoCore::ImageId, VideoCore::ImageId,
+              VideoCore::TextureCache&, Runtime&, Scheduler&) {}
+void PrepareInputs(u32, vk::CommandBuffer, VideoCore::TextureCache&, Runtime&, u32, u32) {}
+void NoteHudless(u32, vk::Image, vk::ImageView, vk::Format, u32, u32) {}
+bool SuperResolution() { return false; }
+bool SuperResolutionUpscaling() { return false; }
+bool SuperResolutionAvailable() { return false; }
+void SetHdr(bool) {}
+void NoteHdrCurve(float) {}
+float HdrCurve() { return 1.0f; }
+bool CompareMode() { return false; }
+const char* ModeName() { return ""; }
+void ToggleSuperResolution() {}
+void NoteVignette(const float[4]) {}
+bool Vignette(float[4]) { return false; }
+void NoteComposite(VideoCore::ImageId, VideoCore::ImageId, VideoCore::TextureCache&) {}
+bool UiTarget(VAddr, u32, u32, u32&, u32&) { return false; }
+void NoteUiShadow(vk::Image, u32, u32) {}
+Upscaled Upscale(u32, Scheduler&, VideoCore::TextureCache&, Runtime&, u32, u32) { return {}; }
+void FrameSubmitted(u32) {}
+void NoInputs(u32) {}
+void BeforePresent(u32, vk::Rect2D, vk::Extent2D) {}
+void AfterPresent(u32) {}
+void Suspend() {}
+bool GetFrameInputs(u32, FrameInputs&) { return false; }
+
+} // namespace Vulkan::Dlssg
+#endif // _WIN32

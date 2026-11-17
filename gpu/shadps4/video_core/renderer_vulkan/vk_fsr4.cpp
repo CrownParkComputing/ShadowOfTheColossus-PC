@@ -2,6 +2,8 @@
 
 #include "video_core/renderer_vulkan/vk_fsr4.h"
 
+#ifdef _WIN32 // sotc: AMD ships the FSR 4.1 SDK as Windows DLLs; stubs below keep Linux building
+
 #include <windows.h>
 
 #include <algorithm>
@@ -285,3 +287,15 @@ bool Dispatch(VkCommandBuffer cmdbuf, const Params& p) {
 }
 
 } // namespace Vulkan::Fsr4
+
+#else // !WIN32
+
+namespace Vulkan::Fsr4 {
+
+bool Init(const Instance&) { return false; }
+bool Available() { return false; }
+const char* Name() { return ""; }
+bool Dispatch(VkCommandBuffer, const Params&) { return false; }
+
+} // namespace Vulkan::Fsr4
+#endif // _WIN32

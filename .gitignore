@@ -24,3 +24,14 @@ patches.json
 !launcher/sotc.png
 out/
 sotc.ini
+# Local build scratch, credentials, and proprietary game/firmware inputs.
+.build-lf.sh
+.env
+.env.*
+*.pkg
+*.psarc
+*.prx
+*.sprx
+*.self
+eboot.bin
+/CUSA*/
